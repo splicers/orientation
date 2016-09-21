@@ -1,4 +1,4 @@
-class User < ActiveRecord::Base
+class User < ApplicationRecord
   belongs_to :article
   has_many :articles, foreign_key: "author_id"
   has_many :subscriptions, class_name: "ArticleSubscription"
@@ -7,8 +7,11 @@ class User < ActiveRecord::Base
   has_many :endorsed_articles, through: :endorsements, source: :article
   has_many :edits, class_name: "Article", foreign_key: "editor_id"
 
+  store_accessor :preferences,
+    :private_email
+
   validates :email, presence: true
-  validate :whitelisted_email, if: -> { self.class.email_whitelist? }
+  validate :whitelisted_email, if: -> { self.class.email_whitelist_enabled? }
 
   def self.author
     joins(:articles).group('users.id').having('count(articles.id) > 0')
@@ -17,7 +20,7 @@ class User < ActiveRecord::Base
   def self.prolific
     joins(articles: :author).
       select('users.*, count(articles.id) as articles_count').
-      group('users.id').
+      group(:id).
       order('articles_count DESC')
   end
 
@@ -58,17 +61,19 @@ class User < ActiveRecord::Base
 
     articles = self.articles.stale.select(&:ready_to_notify_author_of_staleness?)
     article_ids = articles.map(&:id)
-    Delayed::Job.enqueue(StalenessNotificationJob.new(article_ids)) unless article_ids.empty?
+    StalenessNotificationJob.perform_later(article_ids) unless article_ids.empty?
   end
 
-  # TODO: improve this query
   def subscribed_to?(article)
-    subscriptions.where(article_id: article.id, user_id: self.id).count > 0
+    subscriptions.where(article_id: article.id, user_id: id).any?
   end
 
-  # TODO: improve this query
   def endorsing?(article)
-    endorsements.where(article_id: article.id, user_id: self.id).count > 0
+    endorsements.where(article_id: article.id, user_id: id).any?
+  end
+
+  def email_status
+    private_email ? "Public" : "Private"
   end
 
   def to_s
@@ -76,7 +81,7 @@ class User < ActiveRecord::Base
   end
 
   private
-  def self.email_whitelist?
+  def self.email_whitelist_enabled?
     !!ENV['ORIENTATION_EMAIL_WHITELIST']
   end
 
@@ -85,7 +90,7 @@ class User < ActiveRecord::Base
   end
 
   def whitelisted_email
-    if email_whitelist.none? { |email| self.email.include?(email) }
+    if email_whitelist.none? { |rule| email.include?(rule) }
       errors.add(:email, "doesn't match the email domain whitelist: #{email_whitelist}")
     end
   end

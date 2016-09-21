@@ -7,16 +7,23 @@
 # Ignore bundler config
 /.bundle
 
+# Ignore developer chosen ruby management
+.ruby-gemset
+
 # Ignore the default SQLite database.
 /db/*.sqlite3
 /db/*.sqlite3-journal
 
 # Ignore all logfiles and tempfiles.
 /log/*
+/tmp/*
 !/log/.keep
-/tmp
 
-/config/database.yml
+# Ignore Byebug command history file.
+.byebug_history
+
+config/database.yml
+config/orientation.yml
 
 # ignore coveralls/simplecov
 coverage/

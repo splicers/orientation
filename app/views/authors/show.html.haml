@@ -13,7 +13,7 @@
 
           - if current_user == @author
             .form
-              = simple_form_for @author.source, url: author_path( @author ), method: :patch do | f |
+              = simple_form_for @author.object, url: author_path( @author ), method: :patch do | f |
 
                 %fieldset.form-field
                   - if @author == current_user
@@ -27,8 +27,9 @@
           - else
             %p.mbxs= @author.shtick
 
-          - unless @author == current_user
-            %p= mail_to @author.email
+          %p= @author.email
+          - if @author == current_user
+            = @author.toggle_email_privacy
 
           .card-section.card-section--row
             %h2.mbs Contributions
@@ -45,7 +46,7 @@
           - # TODO: Apply signal classes unique to Article decorator
           %ul.list.list--xs.mbl
             - @author.articles.each do | article |
-              %li.card.list-item.article{ class: ( 'has-article-footer' unless article.tags.empty? ) }
+              %li.card.list-item.article{ class: ( 'has-article-footer' if article.tags.any? ) }
                 = link_to article.title, article, class: 'article-title'
         - else
           - if current_user == @author
@@ -59,7 +60,7 @@
         - if @author.edits.count > 0
           %ul.list.list--xs.mbl
             - @author.edits.each do | article |
-              %li.card.list-item.article{ class: ( 'has-article-footer' unless article.tags.empty? ) }
+              %li.card.list-item.article{ class: ( 'has-article-footer' if article.tags.any? ) }
                 = link_to article.title, article, class: 'article-title'
         - else
           %p #{ @author.first_name } hasn't edited any articles yet.
@@ -68,7 +69,7 @@
         - if @author.subscribed_articles.count > 0
           %ul.list.list--xs
             - @author.subscribed_articles.each do | article |
-              %li.card.list-item.article{ class: ( 'has-article-footer' unless article.tags.empty? ) }
+              %li.card.list-item.article{ class: ( 'has-article-footer' if article.tags.any? ) }
                 = link_to article.title, article, class: 'article-title'
         - else
           %p #{ @author.first_name } isn't subscribed to any articles yet.

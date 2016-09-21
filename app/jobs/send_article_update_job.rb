@@ -1,5 +1,7 @@
-class SendArticleUpdateJob < Struct.new(:article_id, :user_id)
-  def perform
+class SendArticleUpdateJob < ApplicationJob
+  queue_as :default
+
+  def perform(article_id, user_id)
     article = Article.find(article_id)
     user = User.find(user_id)
 

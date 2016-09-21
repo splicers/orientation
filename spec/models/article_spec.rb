@@ -1,6 +1,26 @@
 require "rails_helper"
 
 RSpec.describe Article do
+  describe "#after_destroy" do
+    let(:article) { create(:article) }
+    let(:speakerphone) { double(:speakerphone, shout: 'foo') }
+
+    it 'notifies slack that it has been destroyed' do
+      expect(Speakerphone).to receive(:new).with(article, :destroyed).and_return(speakerphone)
+      article.destroy
+    end
+  end
+
+  describe "#subscribe" do
+    let(:author) { create(:user) }
+    let(:article) { create(:article, author: author) }
+
+    it 'creates a subscription that belongs to the author' do
+      article.subscribe(author)
+      expect(article.subscriptions.last.user_id).to eq(author.id)
+    end
+  end
+
   describe "#after_save" do
     let(:article) { create(:article) }
     let(:user) { create(:user) }
@@ -38,6 +58,29 @@ RSpec.describe Article do
     it "increments the visits" do
       expect { count_visit }.to change { article.reload.visits }.by(1)
     end
+  end
+
+  describe "#subscribers_to_update" do
+    let(:author) { create(:user) }
+    let(:editor) { create(:user) }
+    let(:article) { create(:article, author: author, editor: editor) }
+    let!(:author_sub) do
+      create(:article_subscription, article: article, user: author)
+    end
+    let!(:editor_sub) do
+      create(:article_subscription, article: article, user: editor)
+    end
+
+    subject { article.reload.subscribers_to_update }
+
+    it "does not include the editor's subscription" do
+      expect(subject).to_not include(editor_sub)
+    end
+
+    it 'returns other subscriptions' do
+      expect(subject).to include(author_sub)
+    end
+
   end
 
   describe '#author?(user)' do
@@ -209,32 +252,6 @@ RSpec.describe Article do
     end
   end
 
-  describe ".text_search" do
-    before { 100.times { create :article } }
-
-    let!(:article) { create :article, title: "Pumpernickel Stew", content: "Yum!"}
-
-    it "does partial title matching" do
-      result = Article.text_search "Pumper"
-      expect(result.first).to eq(article)
-    end
-
-    it "does full title matching" do
-      result = Article.text_search article.title
-      expect(result.first).to eq(article)
-    end
-
-    it "does partial content matching" do
-      result = Article.text_search "yum"
-      expect(result).to include(article)
-    end
-
-    it "does full content matching" do
-      result = Article.text_search article.content
-      expect(result).to include(article)
-    end
-  end
-
   describe ".recent" do
     let!(:recent_article) { create :article }
     let!(:more_recent_article) { create :article }
@@ -324,8 +341,10 @@ RSpec.describe Article do
     end
   end
 
-  describe "#rot!" do
-    subject(:rot!) { article.rot! }
+  describe "#rot!(user_id)" do
+    let(:reporter) { create(:user) }
+
+    subject(:rot!) { article.rot!(reporter.id) }
 
     context 'with a fresh article' do
       let(:article) { create(:article, :fresh) }

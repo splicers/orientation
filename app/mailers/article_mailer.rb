@@ -24,23 +24,26 @@ class ArticleMailer < MandrillMailer::TemplateMailer
 
   def send_updates_for(article, user)
     mandrill_mail template: 'article-subscription-update',
-                  subject: "#{article.title} was just updated",
+                  subject: "#{article.title} was updated by #{article.editor}",
                   from_name: 'Orientation',
                   to: { email: user.email, name: user.name },
                   vars: {
                     'ARTICLE_TITLE' => article.title,
-                    'URL' => article_url(article)
+                    'URL' => article_url(article),
+                    'EDITOR' => article.editor
                   }
   end
 
-  def send_rotten_notification_for(article, contributors)
+  def send_rotten_notification_for(article, contributors, reporter)
     mandrill_mail template: 'article-rotten-update',
-                  subject: 'Article Rotten Update',
+                  subject: "#{reporter.name} marked #{article.title} as rotten",
                   from_name: 'Orientation',
                   to: contributors,
                   vars: {
                     'ARTICLE_TITLE' => article.title,
-                    'URL' => article_url(article)
+                    'URL' => article_url(article),
+                    'REPORTER_NAME' => reporter.name,
+                    'REPORTER_URL' => author_url(reporter)
                   }
   end
 

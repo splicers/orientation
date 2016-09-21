@@ -3,7 +3,7 @@
 - if @article.archived?
   %p.bulletin.bulletin--warning This article has been archived. Please don't trust the information displayed here.
 - if @article.rotten?
-  %p.bulletin.bulletin--warning This article has gone rotten. The information is partially or completely out-of-date.
+  %p.bulletin.bulletin--warning This article was reported as rotten #{@article.rot_reporter} on #{@article.rotted_at}. The information is partially or completely out-of-date.
 - if @article.stale?
   %p.bulletin.bulletin--notice.tct This article has gone stale. It hasn't been updated in a while so the information may be slightly out-of-date.
 
@@ -49,9 +49,10 @@
               data: { shortcut: 'e' }
           %li.list-item
             - toggle_archived_label = !@article.archived? ? 'Archive' : 'Unarchive'
-            = link_to toggle_archived_label, toggle_archived_article_url( @article ), class: 'btn btn--b', method: :put
+            = link_to toggle_archived_label, toggle_archived_article_url( @article ), class: 'btn btn--b', data: { method: :put, confirm: "Are you sure?" }
+
           %li.list-item
-            = link_to 'Delete', @article, class: 'btn btn--b', method: :delete
+            = link_to 'Delete', @article, class: 'btn btn--b', data: { method: :delete, confirm: "Are you sure?" }
 
       %aside.g-b.g-b--m--1of3
 

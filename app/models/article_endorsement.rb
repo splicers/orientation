@@ -1,4 +1,4 @@
-class ArticleEndorsement < ActiveRecord::Base
+class ArticleEndorsement < ApplicationRecord
   include Dateable
 
   belongs_to :article, counter_cache: :endorsements_count
@@ -7,6 +7,6 @@ class ArticleEndorsement < ActiveRecord::Base
   after_create :send_endorsement
 
   def send_endorsement
-    Delayed::Job.enqueue(SendArticleEndorsementJob.new(self.id))
+    SendArticleEndorsementJob.perform_later(id)
   end
 end

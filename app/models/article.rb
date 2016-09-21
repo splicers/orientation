@@ -1,58 +1,51 @@
-require "ostruct"
-
-class Article < ActiveRecord::Base
+class Article < ApplicationRecord
   include Dateable
   extend ActionView::Helpers::DateHelper
   extend FriendlyId
 
-  friendly_id :title, use: [:slugged, :history]
-
-  def should_generate_new_friendly_id?
-    !has_friendly_id_slug? or title_changed?
-  end
-
-  def has_friendly_id_slug?
-    slugs.where(slug: friendly_id).exists?
-  end
+  friendly_id :title
 
   belongs_to :author, class_name: "User"
   belongs_to :editor, class_name: "User"
-  has_and_belongs_to_many :tags, counter_cache: :tags_count, before_add: :validates_tag
-  has_many :subscriptions, class_name: "ArticleSubscription", counter_cache: true, dependent: :destroy
+  belongs_to :rot_reporter, class_name: "User"
+
+  has_many :articles_tags, dependent: :destroy
+  has_many :tags, through: :articles_tags, counter_cache: :tags_count
+  has_many :subscriptions, class_name: "ArticleSubscription", dependent: :destroy
   has_many :subscribers, through: :subscriptions, class_name: "User", source: :user
-  has_many :endorsements, class_name: "ArticleEndorsement", counter_cache: true, dependent: :destroy
+  has_many :endorsements, class_name: "ArticleEndorsement", dependent: :destroy
   has_many :endorsers, through: :endorsements, class_name: "User", source: :user
 
   attr_reader :tag_tokens
 
+  validates :title, presence: true
+
   after_save :update_subscribers
   after_save :notify_slack
-  after_create :increment_tags_counter
-  before_destroy :decrement_tags_counter
   after_destroy :notify_slack
 
   FRESHNESS_LIMIT = 7.days
   STALENESS_LIMIT = 6.months
 
-  FRESHNESS = "Created within the last #{distance_of_time_in_words(FRESHNESS_LIMIT)}."
+  FRESHNESS = "Updated in the last #{distance_of_time_in_words(FRESHNESS_LIMIT)}."
   STALENESS = "Updated over #{distance_of_time_in_words(STALENESS_LIMIT)} ago."
   ROTTENNESS = "Deemed in need of an update."
   POPULARITY = "Endorsed, subscribed, & visited."
   ARCHIVAL = "Outdated & ignored in searches."
 
   scope :archived, -> { where.not(archived_at: nil) }
-  scope :current, -> { where(archived_at: nil).order(rotted_at: :desc).order(updated_at: :desc).order(created_at: :desc) }
+  scope :current, -> do
+    where(archived_at: nil)
+      .order(rotted_at: :desc, updated_at: :desc, created_at: :desc)
+  end
   scope :fresh, -> do
-    where("updated_at >= ?", FRESHNESS_LIMIT.ago).
-      where(archived_at: nil).
-      where(rotted_at: nil)
+    where(%Q["articles"."updated_at" >= ?], FRESHNESS_LIMIT.ago)
+      .where(archived_at: nil, rotted_at: nil)
   end
-  scope :guide, -> { where(guide: true) }
-  scope :popular, -> { order("endorsements_count DESC, subscriptions_count DESC, visits DESC") }
-  scope :rotten, -> { where("rotted_at IS NOT NULL") }
-  scope :stale, -> do
-    where("updated_at < ?", STALENESS_LIMIT.ago)
-  end
+  scope :guide,   -> { where(guide: true) }
+  scope :popular, -> { order(endorsements_count: :desc, subscriptions_count: :desc, visits: :desc) }
+  scope :rotten,  -> { where.not(rotted_at: nil) }
+  scope :stale,   -> { where(%Q["articles"."updated_at" < ?], STALENESS_LIMIT.ago) }
 
   def self.count_visit(article_instance)
     self.increment_counter(:visits, article_instance.id)
@@ -70,7 +63,7 @@ class Article < ActiveRecord::Base
     scope ||= current
 
     if query.present?
-      scope.fuzzy_search({ title: query, content: query }, false)
+      scope.advanced_search(title: query)
     else
       scope
     end
@@ -81,7 +74,7 @@ class Article < ActiveRecord::Base
   end
 
   def archive!
-    update_attribute(:archived_at, Time.now.in_time_zone)
+    update_attribute(:archived_at, Time.current)
   end
 
   def archived?
@@ -113,9 +106,9 @@ class Article < ActiveRecord::Base
     touch(:updated_at)
   end
 
-  def rot!
-    update_attribute(:rotted_at, Time.now.in_time_zone)
-    Delayed::Job.enqueue(SendArticleRottenJob.new(self.id, contributors))
+  def rot!(user_id)
+    update(rotted_at: Time.current, rot_reporter_id: user_id)
+    SendArticleRottenJob.perform_later(id, user_id)
   end
 
   def never_notified_author?
@@ -132,14 +125,13 @@ class Article < ActiveRecord::Base
   end
 
   def self.reset_tags_count
-    self.all.each do |article|
-      tag_count = article.tags.count
-      article.update_attribute(:tags_count, tag_count)
+    pluck(:id).each do |article_id|
+      reset_counters(article_id, :tags)
     end
   end
 
   def contributors
-    User.where(id: [self.author_id, self.editor_id]).uniq.map do |user|
+    User.where(id: [self.author_id, self.editor_id]).distinct.select(:name, :email).map do |user|
       { name: user.name, email: user.email }
     end
   end
@@ -151,7 +143,7 @@ class Article < ActiveRecord::Base
     self.subscriptions.find_or_create_by!(user: user)
   end
 
-  # @user - the user to unsubscribed from this article
+  # @user - the user to unsubscribe from this article
   # Returns true if the unsubscription was successful
   # Returns false if there was no subscription in the first place
   def unsubscribe(user)
@@ -184,39 +176,19 @@ class Article < ActiveRecord::Base
     title
   end
 
-  def to_speakerphone
-    OpenStruct.new(author: author.name, title: title, slug: slug)
-  end
-
-  def to_param
-    slug
-  end
-
   def unarchive!
     update_attribute(:archived_at, nil)
+  end
+
+  def subscribers_to_update
+    subscriptions.reject { |s| s.user == editor }
   end
 
   private
 
   def update_subscribers
-    subscriptions.each do |subscription|
+    subscribers_to_update.each do |subscription|
       subscription.send_update
-    end
-  end
-
-  def validates_tag(tag)
-    self.tags.include?(tag)
-  end
-
-  def increment_tags_counter
-    self.tags.each do |tag|
-      tag.increment!(:articles_count)
-    end
-  end
-
-  def decrement_tags_counter
-    self.tags.each do |tag|
-      tag.decrement!(:articles_count)
     end
   end
 
@@ -229,10 +201,14 @@ class Article < ActiveRecord::Base
   end
 
   def state
-    if created?
-      :created
-    elsif destroyed?
+    if destroyed?
       :destroyed
+    elsif created?
+      :created
+    elsif archived_at?
+      :archived
+    elsif rotted_at?
+      :rotten
     else
       :updated
     end

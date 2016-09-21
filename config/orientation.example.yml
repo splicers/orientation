@@ -6,7 +6,7 @@ development: &defaults
   upload: :localhost
 
 production:
-  exception_reporting: :bugsnag
+  exception_reporting: :false
   mailers: :mandrill
   oauth: :google
   performance_monitoring: :skylight

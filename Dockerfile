@@ -30,6 +30,7 @@ WORKDIR /orientation
 RUN npm install --allow-root
 
 ADD ./config/database.docker.yml /orientation/config/database.yml
+ADD ./config/orientation.example.yml /orientation/config/orientation.yml
 
 ENV RAILS_ENV=production
 

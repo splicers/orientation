@@ -35,6 +35,7 @@ RUN bower install --allow-root
 ADD ./config/database.docker.yml /orientation/config/database.yml
 ADD ./config/orientation.example.yml /orientation/config/orientation.yml
 
+ENV ORIENTATION_EMAIL_WHITELIST=splice.com
 ENV RAILS_ENV=production
 
 EXPOSE 3000
